@@ -69,6 +69,7 @@ int zslLexValueLteMax(sds value, zlexrangespec *spec);
 /* Create a skiplist node with the specified number of levels.
  * The SDS string 'ele' is referenced by the node after the call. */
 zskiplistNode *zslCreateNode(int level, double score, sds ele) {
+    //分配内存
     zskiplistNode *zn =
         zmalloc(sizeof(*zn)+level*sizeof(struct zskiplistLevel));
     zn->score = score;
@@ -130,6 +131,7 @@ int zslRandomLevel(void) {
  * exist (up to the caller to enforce that). The skiplist takes ownership
  * of the passed SDS string 'ele'. */
 zskiplistNode *zslInsert(zskiplist *zsl, double score, sds ele) {
+    //update 用来保存每一层需要插入节点位置的前一个节点
     zskiplistNode *update[ZSKIPLIST_MAXLEVEL], *x;
     unsigned int rank[ZSKIPLIST_MAXLEVEL];
     int i, level;
@@ -154,34 +156,43 @@ zskiplistNode *zslInsert(zskiplist *zsl, double score, sds ele) {
      * caller of zslInsert() should test in the hash table if the element is
      * already inside or not. */
     level = zslRandomLevel();
+    //新插入节点的level大于当前跳表的level
     if (level > zsl->level) {
         for (i = zsl->level; i < level; i++) {
             rank[i] = 0;
+            //多出的level的前一个节点为header，跨度就是当前zskiplist的长度
             update[i] = zsl->header;
             update[i]->level[i].span = zsl->length;
         }
+        //更新跳表的level
         zsl->level = level;
     }
+    //创建一个新zskiplistnode
     x = zslCreateNode(level,score,ele);
+    //将其插入在每一层中
     for (i = 0; i < level; i++) {
         x->level[i].forward = update[i]->level[i].forward;
         update[i]->level[i].forward = x;
 
         /* update span covered by update[i] as x is inserted here */
-        x->level[i].span = update[i]->level[i].span - (rank[0] - rank[i]);
-        update[i]->level[i].span = (rank[0] - rank[i]) + 1;
+        //rank[0] - rank[i] 就是新插入节点和每一层前一个节点之间的span
+        x->level[i].span = update[i]->level[i].span - (rank[0] - rank[i]); //新插入节点的span
+        update[i]->level[i].span = (rank[0] - rank[i]) + 1;           //更新插入位置前一个节点的span
     }
 
     /* increment span for untouched levels */
     for (i = level; i < zsl->level; i++) {
         update[i]->level[i].span++;
     }
-
+    //为新插入节点的前驱指针赋值
     x->backward = (update[0] == zsl->header) ? NULL : update[0];
+    //没有插在第1层的结尾则将其下一个节点的前向指针指向x
     if (x->level[0].forward)
         x->level[0].forward->backward = x;
+    //否则更新zskiplist的tail指针
     else
         zsl->tail = x;
+    //长度+1
     zsl->length++;
     return x;
 }
@@ -234,6 +245,7 @@ int zslDelete(zskiplist *zsl, double score, sds ele, zskiplistNode **node) {
     /* We may have multiple elements with the same score, what we need
      * is to find the element with both the right score and object. */
     x = x->level[0].forward;
+    //判断x和要删除的节点是否相同
     if (x && score == x->score && sdscmp(x->ele,ele) == 0) {
         zslDeleteNode(zsl, x, update);
         if (!node)
